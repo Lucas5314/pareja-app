@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+
+<title>Pareja ❤️</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+<h1>Pareja ❤️</h1>
+
+<div id="main">
+
+    <div id="movieArea">
+
+        <video
+            id="movie"
+            controls>
+        </video>
+
+    </div>
+
+    <div id="cameraArea">
+
+        <video
+            id="localVideo"
+            autoplay
+            muted>
+        </video>
+
+        <video
+            id="remoteVideo"
+            autoplay>
+        </video>
+
+    </div>
+
+</div>
+
+<div id="controls">
+
+<input
+type="file"
+id="filePicker"
+accept="video/*">
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+
+<script src="socket.js"></script>
+
+<script src="webrtc.js"></script>
+
+<script src="player.js"></script>
+
+<script src="app.js"></script>
+
+</body>
+
+</html>
