@@ -11,7 +11,7 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
 // ----------------------------
-// VIDEO STATE (IMPORTANTE)
+// VIDEO STATE
 // ----------------------------
 let currentVideo = {};
 
@@ -40,10 +40,7 @@ app.post("/upload", upload.single("video"), (req, res) => {
 
     const url = "/uploads/" + req.file.filename;
 
-    res.json({
-        success: true,
-        url
-    });
+    res.json({ success: true, url });
 
 });
 
@@ -59,23 +56,20 @@ io.on("connection", (socket) => {
 
         socket.join(room);
 
+        // avisar a otros
         socket.to(room).emit("user-joined");
 
-        // 🔥 sincronizar video si ya existe
+        // sincronizar video si existe
         if (currentVideo[room]) {
             socket.emit("video-selected", currentVideo[room]);
         }
-
     });
 
     // ----------------------------
-    // 🔥 WEBRTC SIGNAL FIX REAL
+    // WEBRTC SIGNAL (CORREGIDO)
     // ----------------------------
     socket.on("signal", (data) => {
-
-        // IMPORTANTÍSIMO: reenviar todo
         socket.to(data.room).emit("signal", data);
-
     });
 
     // ----------------------------
@@ -90,18 +84,14 @@ io.on("connection", (socket) => {
     });
 
     socket.on("video-event", ({ room, event }) => {
-
         socket.to(room).emit("video-event", event);
-
     });
 
     // ----------------------------
     // CHAT
     // ----------------------------
     socket.on("chat-message", ({ room, message }) => {
-
         socket.to(room).emit("chat-message", message);
-
     });
 
 });

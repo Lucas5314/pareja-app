@@ -4,26 +4,17 @@ const remoteVideo = document.getElementById("remoteVideo");
 let localStream;
 let peerConnection;
 
-// ----------------------------
-// ROOM (OBLIGATORIO)
-// ----------------------------
 const room = "pareja1";
-socket.emit("join-room", room);
 
-// ----------------------------
-// CONFIG WEBRTC
-// ----------------------------
 const config = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" }
+        { urls: "stun:stun1.l.google.com:19302" }
     ]
 };
 
 // ----------------------------
-// CAMARA Y AUDIO
+// 1. CAMARA PRIMERO (OBLIGATORIO)
 // ----------------------------
 navigator.mediaDevices.getUserMedia({ video: true, audio: true })
 .then(stream => {
@@ -31,20 +22,30 @@ navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     localStream = stream;
     localVideo.srcObject = stream;
 
+    // 🔥 SOLO DESPUÉS entrar a sala
+    socket.emit("join-room", room);
+
 })
 .catch(err => {
     console.error("Error cámara/micrófono:", err);
 });
 
 // ----------------------------
-// CUANDO ALGUIEN ENTRA
+// 2. USER JOINED
 // ----------------------------
 socket.on("user-joined", () => {
+
+    if (!localStream) {
+        setTimeout(() => startConnection(true), 1000);
+        return;
+    }
+
     startConnection(true);
+
 });
 
 // ----------------------------
-// SIGNAL (CORREGIDO)
+// 3. SIGNAL
 // ----------------------------
 socket.on("signal", async (data) => {
 
@@ -52,21 +53,18 @@ socket.on("signal", async (data) => {
 
     try {
 
-        // OFFER
         if (data.type === "offer") {
 
             await startConnection(false, data);
 
         }
 
-        // ANSWER
         else if (data.type === "answer") {
 
             await peerConnection.setRemoteDescription(data);
 
         }
 
-        // ICE CANDIDATE
         else if (data.candidate) {
 
             await peerConnection.addIceCandidate(
@@ -82,7 +80,7 @@ socket.on("signal", async (data) => {
 });
 
 // ----------------------------
-// WEBRTC CORE
+// 4. WEBRTC CORE
 // ----------------------------
 function startConnection(isCaller, offer = null) {
 
@@ -95,12 +93,12 @@ function startConnection(isCaller, offer = null) {
         peerConnection.addTrack(track, localStream);
     });
 
-    // recibir audio/video
+    // recibir video
     peerConnection.ontrack = (event) => {
         remoteVideo.srcObject = event.streams[0];
     };
 
-    // ICE candidates (CORREGIDO)
+    // ICE
     peerConnection.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -114,9 +112,7 @@ function startConnection(isCaller, offer = null) {
 
     };
 
-    // ----------------------------
     // CALLER
-    // ----------------------------
     if (isCaller) {
 
         peerConnection.createOffer()
@@ -133,9 +129,7 @@ function startConnection(isCaller, offer = null) {
 
     }
 
-    // ----------------------------
     // RECEIVER
-    // ----------------------------
     else {
 
         peerConnection.setRemoteDescription(offer)
