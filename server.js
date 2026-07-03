@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 // ----------------------------
-// PUERTO PARA RENDER
+// PUERTO RENDER
 // ----------------------------
 
 const PORT = process.env.PORT || 3000;
@@ -19,15 +19,12 @@ const PORT = process.env.PORT || 3000;
 // ----------------------------
 
 const storage = multer.diskStorage({
-
     destination: (req, file, cb) => {
         cb(null, "uploads/");
     },
-
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname));
     }
-
 });
 
 const upload = multer({ storage });
@@ -40,15 +37,13 @@ app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
 // ----------------------------
-// SUBIR VIDEO
+// UPLOAD VIDEO
 // ----------------------------
 
 app.post("/upload", upload.single("video"), (req, res) => {
 
     if (!req.file) {
-        return res.status(400).json({
-            success: false
-        });
+        return res.status(400).json({ success: false });
     }
 
     const url = "/uploads/" + req.file.filename;
@@ -68,6 +63,7 @@ io.on("connection", (socket) => {
 
     console.log("Conectado:", socket.id);
 
+    // entrar a sala
     socket.on("join-room", (room) => {
 
         socket.join(room);
@@ -76,11 +72,20 @@ io.on("connection", (socket) => {
 
     });
 
-    socket.on("signal", ({ room, signal }) => {
+    // ----------------------------
+    // 🔥 WEBRTC SIGNAL (CORREGIDO)
+    // ----------------------------
 
-        socket.to(room).emit("signal", signal);
+    socket.on("signal", (data) => {
+
+        // reenviar TODO sin romperlo
+        socket.to(data.room).emit("signal", data);
 
     });
+
+    // ----------------------------
+    // SINCRONIZAR VIDEO
+    // ----------------------------
 
     socket.on("video-event", ({ room, event }) => {
 
@@ -88,11 +93,19 @@ io.on("connection", (socket) => {
 
     });
 
+    // ----------------------------
+    // CHAT
+    // ----------------------------
+
     socket.on("chat-message", ({ room, message }) => {
 
         socket.to(room).emit("chat-message", message);
 
     });
+
+    // ----------------------------
+    // VIDEO SELECCIONADO
+    // ----------------------------
 
     socket.on("video-selected", ({ room, url }) => {
 
@@ -103,11 +116,9 @@ io.on("connection", (socket) => {
 });
 
 // ----------------------------
-// START SERVER (RENDER SAFE)
+// START SERVER (RENDER)
 // ----------------------------
 
 server.listen(PORT, () => {
-
     console.log("Servidor corriendo en puerto " + PORT);
-
 });
