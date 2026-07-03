@@ -4,13 +4,19 @@ const remoteVideo = document.getElementById("remoteVideo");
 let localStream;
 let peerConnection;
 
+// 🔥 MEJOR STUN CONFIG (más estable en internet)
 const config = {
     iceServers: [
-        {
-            urls: "stun:stun.l.google.com:19302"
-        }
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" }
     ]
 };
+
+// ----------------------------
+// CAMARA Y MICROFONO
+// ----------------------------
 
 navigator.mediaDevices.getUserMedia({
     video: true,
@@ -19,15 +25,16 @@ navigator.mediaDevices.getUserMedia({
 .then(stream => {
 
     localStream = stream;
-
     localVideo.srcObject = stream;
 
 })
 .catch(err => {
-
-    console.error(err);
-
+    console.error("Error getUserMedia:", err);
 });
+
+// ----------------------------
+// SOCKET EVENTS
+// ----------------------------
 
 socket.on("user-joined", () => {
 
@@ -35,96 +42,104 @@ socket.on("user-joined", () => {
 
 });
 
-socket.on("signal", async(signal)=>{
+socket.on("signal", async (signal) => {
 
-    if(signal.type==="offer"){
+    if (!peerConnection) return;
 
-        startConnection(false,signal);
+    try {
 
-    }
+        if (signal.type === "offer") {
 
-    else if(signal.type==="answer"){
+            startConnection(false, signal);
 
-        await peerConnection.setRemoteDescription(signal);
+        } 
+        else if (signal.type === "answer") {
 
-    }
+            await peerConnection.setRemoteDescription(signal);
 
-    else if(signal.candidate){
+        } 
+        else if (signal.candidate) {
 
-        await peerConnection.addIceCandidate(signal);
+            await peerConnection.addIceCandidate(signal);
 
+        }
+
+    } catch (err) {
+        console.error("Signal error:", err);
     }
 
 });
 
-function startConnection(isCaller,offer=null){
+// ----------------------------
+// WEBCRTC CONNECTION
+// ----------------------------
 
-    peerConnection=new RTCPeerConnection(config);
+function startConnection(isCaller, offer = null) {
 
-    localStream.getTracks().forEach(track=>{
+    if (!localStream) {
+        console.log("No local stream yet");
+        return;
+    }
 
-        peerConnection.addTrack(track,localStream);
+    peerConnection = new RTCPeerConnection(config);
 
+    // enviar audio/video
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
     });
 
-    peerConnection.ontrack=(event)=>{
-
-        remoteVideo.srcObject=event.streams[0];
-
+    // recibir audio/video
+    peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
     };
 
-    peerConnection.onicecandidate=(event)=>{
+    // ICE candidates
+    peerConnection.onicecandidate = (event) => {
 
-        if(event.candidate){
+        if (event.candidate) {
 
-            socket.emit("signal",{
-
+            socket.emit("signal", {
                 room,
-
-                signal:event.candidate
-
+                signal: event.candidate
             });
 
         }
 
     };
 
-    if(isCaller){
+    // ----------------------------
+    // LADO CLIENTE QUE LLAMA
+    // ----------------------------
+
+    if (isCaller) {
 
         peerConnection.createOffer()
+        .then(offer => peerConnection.setLocalDescription(offer))
+        .then(() => {
 
-        .then(offer=>peerConnection.setLocalDescription(offer))
-
-        .then(()=>{
-
-            socket.emit("signal",{
-
+            socket.emit("signal", {
                 room,
-
-                signal:peerConnection.localDescription
-
+                signal: peerConnection.localDescription
             });
 
         });
 
     }
 
-    else{
+    // ----------------------------
+    // LADO QUE RECIBE
+    // ----------------------------
+
+    else {
 
         peerConnection.setRemoteDescription(offer)
+        .then(() => peerConnection.createAnswer())
+        .then(answer => peerConnection.setLocalDescription(answer))
+        .then(() => {
 
-        .then(()=>peerConnection.createAnswer())
-
-        .then(answer=>peerConnection.setLocalDescription(answer))
-
-        .then(()=>{
-
-            socket.emit("signal",{
-
+            socket.emit("signal", {
                 room,
-
-                signal:peerConnection.localDescription
-
+                signal: peerConnection.localDescription
             });
 
         });
