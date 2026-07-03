@@ -4,18 +4,34 @@ const remoteVideo = document.getElementById("remoteVideo");
 let localStream;
 let peerConnection;
 
-// 🔥 MEJOR STUN CONFIG (más estable en internet)
+// ----------------------------
+// CONFIG WEBRTC PRO (STUN + TURN)
+// ----------------------------
+
 const config = {
     iceServers: [
+        // STUN (descubrimiento)
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
         { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" }
+        { urls: "stun:stun3.l.google.com:19302" },
+
+        // TURN (fallback PRO para redes difíciles)
+        {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        },
+        {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+        }
     ]
 };
 
 // ----------------------------
-// CAMARA Y MICROFONO
+// CAMARA Y AUDIO
 // ----------------------------
 
 navigator.mediaDevices.getUserMedia({
@@ -29,7 +45,9 @@ navigator.mediaDevices.getUserMedia({
 
 })
 .catch(err => {
-    console.error("Error getUserMedia:", err);
+
+    console.error("Error cámara/micrófono:", err);
+
 });
 
 // ----------------------------
@@ -65,21 +83,20 @@ socket.on("signal", async (signal) => {
         }
 
     } catch (err) {
+
         console.error("Signal error:", err);
+
     }
 
 });
 
 // ----------------------------
-// WEBCRTC CONNECTION
+// WEBRTC CONNECTION
 // ----------------------------
 
 function startConnection(isCaller, offer = null) {
 
-    if (!localStream) {
-        console.log("No local stream yet");
-        return;
-    }
+    if (!localStream) return;
 
     peerConnection = new RTCPeerConnection(config);
 
@@ -108,7 +125,7 @@ function startConnection(isCaller, offer = null) {
     };
 
     // ----------------------------
-    // LADO CLIENTE QUE LLAMA
+    // CALLER (quien inicia)
     // ----------------------------
 
     if (isCaller) {
@@ -127,7 +144,7 @@ function startConnection(isCaller, offer = null) {
     }
 
     // ----------------------------
-    // LADO QUE RECIBE
+    // RECEIVER (quien recibe)
     // ----------------------------
 
     else {
