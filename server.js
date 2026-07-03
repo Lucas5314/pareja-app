@@ -20,13 +20,14 @@ let currentVideo = {};
 // ----------------------------
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, "uploads/"),
-    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+    filename: (req, file, cb) =>
+        cb(null, Date.now() + path.extname(file.originalname))
 });
 
 const upload = multer({ storage });
 
 // ----------------------------
-// MIDDLEWARE
+// STATIC
 // ----------------------------
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
@@ -35,13 +36,12 @@ app.use("/uploads", express.static("uploads"));
 // UPLOAD VIDEO
 // ----------------------------
 app.post("/upload", upload.single("video"), (req, res) => {
-
     if (!req.file) return res.status(400).json({ success: false });
 
-    const url = "/uploads/" + req.file.filename;
-
-    res.json({ success: true, url });
-
+    res.json({
+        success: true,
+        url: "/uploads/" + req.file.filename
+    });
 });
 
 // ----------------------------
@@ -53,20 +53,19 @@ io.on("connection", (socket) => {
 
     // JOIN ROOM
     socket.on("join-room", (room) => {
-
         socket.join(room);
 
-        // avisar a otros
+        // avisar a TODOS en la sala (más estable)
         socket.to(room).emit("user-joined");
 
-        // sincronizar video si existe
+        // sync video si existe
         if (currentVideo[room]) {
             socket.emit("video-selected", currentVideo[room]);
         }
     });
 
     // ----------------------------
-    // WEBRTC SIGNAL (CORREGIDO)
+    // WEBRTC SIGNAL (IMPORTANTE)
     // ----------------------------
     socket.on("signal", (data) => {
         socket.to(data.room).emit("signal", data);
@@ -76,26 +75,16 @@ io.on("connection", (socket) => {
     // VIDEO SYNC
     // ----------------------------
     socket.on("video-selected", ({ room, url }) => {
-
         currentVideo[room] = url;
-
         socket.to(room).emit("video-selected", url);
-
     });
 
     socket.on("video-event", ({ room, event }) => {
         socket.to(room).emit("video-event", event);
     });
 
-    // ----------------------------
-    // CHAT
-    // ----------------------------
-    socket.on("chat-message", ({ room, message }) => {
-        socket.to(room).emit("chat-message", message);
-    });
-
 });
 
 server.listen(PORT, () => {
-    console.log("Servidor corriendo en puerto " + PORT);
+    console.log("Servidor en puerto", PORT);
 });

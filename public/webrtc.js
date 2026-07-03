@@ -1,39 +1,55 @@
+const socket = io();
+
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
+
+const room = "pareja1";
 
 let localStream;
 let peerConnection;
 
-const room = "pareja1";
-
+// ----------------------------
+// CONFIG WEBRTC
+// ----------------------------
 const config = {
     iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
+        { urls: "stun:stun.l.google.com:19302" }
     ]
 };
 
 // ----------------------------
-// 1. CAMARA PRIMERO (OBLIGATORIO)
+// INICIAR TODO (IMPORTANTE)
 // ----------------------------
-navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-.then(stream => {
+async function start() {
 
-    localStream = stream;
-    localVideo.srcObject = stream;
+    try {
 
-    // 🔥 SOLO DESPUÉS entrar a sala
-    socket.emit("join-room", room);
+        console.log("Pidiendo cámara...");
 
-})
-.catch(err => {
-    console.error("Error cámara/micrófono:", err);
-});
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+        });
+
+        console.log("Cámara OK");
+
+        localVideo.srcObject = localStream;
+
+        socket.emit("join-room", room);
+
+    } catch (err) {
+        console.error("ERROR CAMARA:", err);
+    }
+}
+
+start();
 
 // ----------------------------
-// 2. USER JOINED
+// USER JOINED
 // ----------------------------
 socket.on("user-joined", () => {
+
+    console.log("Otro usuario conectado");
 
     if (!localStream) {
         setTimeout(() => startConnection(true), 1000);
@@ -41,11 +57,10 @@ socket.on("user-joined", () => {
     }
 
     startConnection(true);
-
 });
 
 // ----------------------------
-// 3. SIGNAL
+// SIGNAL
 // ----------------------------
 socket.on("signal", async (data) => {
 
@@ -54,33 +69,26 @@ socket.on("signal", async (data) => {
     try {
 
         if (data.type === "offer") {
-
-            await startConnection(false, data);
-
+            await startConnection(false, data.sdp);
         }
 
         else if (data.type === "answer") {
-
-            await peerConnection.setRemoteDescription(data);
-
+            await peerConnection.setRemoteDescription(data.sdp);
         }
 
         else if (data.candidate) {
-
             await peerConnection.addIceCandidate(
                 new RTCIceCandidate(data.candidate)
             );
-
         }
 
     } catch (err) {
         console.error("Signal error:", err);
     }
-
 });
 
 // ----------------------------
-// 4. WEBRTC CORE
+// WEBRTC CORE
 // ----------------------------
 function startConnection(isCaller, offer = null) {
 
@@ -88,28 +96,24 @@ function startConnection(isCaller, offer = null) {
 
     peerConnection = new RTCPeerConnection(config);
 
-    // enviar audio/video
+    // enviar stream
     localStream.getTracks().forEach(track => {
         peerConnection.addTrack(track, localStream);
     });
 
-    // recibir video
+    // recibir stream
     peerConnection.ontrack = (event) => {
         remoteVideo.srcObject = event.streams[0];
     };
 
     // ICE
     peerConnection.onicecandidate = (event) => {
-
         if (event.candidate) {
-
             socket.emit("signal", {
                 room,
                 candidate: event.candidate
             });
-
         }
-
     };
 
     // CALLER
