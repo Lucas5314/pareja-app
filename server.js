@@ -8,23 +8,19 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// ----------------------------
-// PUERTO RENDER
-// ----------------------------
-
 const PORT = process.env.PORT || 3000;
 
 // ----------------------------
-// MULTER (UPLOAD VIDEOS)
+// VIDEO STATE (IMPORTANTE)
 // ----------------------------
+let currentVideo = {};
 
+// ----------------------------
+// MULTER
+// ----------------------------
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, "uploads/");
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
-    }
+    destination: (req, file, cb) => cb(null, "uploads/"),
+    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 
 const upload = multer({ storage });
@@ -32,19 +28,15 @@ const upload = multer({ storage });
 // ----------------------------
 // MIDDLEWARE
 // ----------------------------
-
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
 // ----------------------------
 // UPLOAD VIDEO
 // ----------------------------
-
 app.post("/upload", upload.single("video"), (req, res) => {
 
-    if (!req.file) {
-        return res.status(400).json({ success: false });
-    }
+    if (!req.file) return res.status(400).json({ success: false });
 
     const url = "/uploads/" + req.file.filename;
 
@@ -58,34 +50,44 @@ app.post("/upload", upload.single("video"), (req, res) => {
 // ----------------------------
 // SOCKET.IO
 // ----------------------------
-
 io.on("connection", (socket) => {
 
     console.log("Conectado:", socket.id);
 
-    // entrar a sala
+    // JOIN ROOM
     socket.on("join-room", (room) => {
 
         socket.join(room);
 
         socket.to(room).emit("user-joined");
 
+        // 🔥 sincronizar video si ya existe
+        if (currentVideo[room]) {
+            socket.emit("video-selected", currentVideo[room]);
+        }
+
     });
 
     // ----------------------------
-    // 🔥 WEBRTC SIGNAL (CORREGIDO)
+    // 🔥 WEBRTC SIGNAL FIX REAL
     // ----------------------------
-
     socket.on("signal", (data) => {
 
-        // reenviar TODO sin romperlo
+        // IMPORTANTÍSIMO: reenviar todo
         socket.to(data.room).emit("signal", data);
 
     });
 
     // ----------------------------
-    // SINCRONIZAR VIDEO
+    // VIDEO SYNC
     // ----------------------------
+    socket.on("video-selected", ({ room, url }) => {
+
+        currentVideo[room] = url;
+
+        socket.to(room).emit("video-selected", url);
+
+    });
 
     socket.on("video-event", ({ room, event }) => {
 
@@ -96,28 +98,13 @@ io.on("connection", (socket) => {
     // ----------------------------
     // CHAT
     // ----------------------------
-
     socket.on("chat-message", ({ room, message }) => {
 
         socket.to(room).emit("chat-message", message);
 
     });
 
-    // ----------------------------
-    // VIDEO SELECCIONADO
-    // ----------------------------
-
-    socket.on("video-selected", ({ room, url }) => {
-
-        socket.to(room).emit("video-selected", url);
-
-    });
-
 });
-
-// ----------------------------
-// START SERVER (RENDER)
-// ----------------------------
 
 server.listen(PORT, () => {
     console.log("Servidor corriendo en puerto " + PORT);

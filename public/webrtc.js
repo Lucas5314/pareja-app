@@ -5,39 +5,27 @@ let localStream;
 let peerConnection;
 
 // ----------------------------
-// CONFIG WEBRTC PRO (STUN + TURN)
+// ROOM (OBLIGATORIO)
 // ----------------------------
+const room = "pareja1";
+socket.emit("join-room", room);
 
+// ----------------------------
+// CONFIG WEBRTC
+// ----------------------------
 const config = {
     iceServers: [
-        // STUN (descubrimiento)
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
         { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
-
-        // TURN (fallback PRO para redes difíciles)
-        {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        },
-        {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-        }
+        { urls: "stun:stun3.l.google.com:19302" }
     ]
 };
 
 // ----------------------------
 // CAMARA Y AUDIO
 // ----------------------------
-
-navigator.mediaDevices.getUserMedia({
-    video: true,
-    audio: true
-})
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
 .then(stream => {
 
     localStream = stream;
@@ -45,55 +33,57 @@ navigator.mediaDevices.getUserMedia({
 
 })
 .catch(err => {
-
     console.error("Error cámara/micrófono:", err);
-
 });
 
 // ----------------------------
-// SOCKET EVENTS
+// CUANDO ALGUIEN ENTRA
 // ----------------------------
-
 socket.on("user-joined", () => {
-
     startConnection(true);
-
 });
 
-socket.on("signal", async (signal) => {
+// ----------------------------
+// SIGNAL (CORREGIDO)
+// ----------------------------
+socket.on("signal", async (data) => {
 
     if (!peerConnection) return;
 
     try {
 
-        if (signal.type === "offer") {
+        // OFFER
+        if (data.type === "offer") {
 
-            startConnection(false, signal);
+            await startConnection(false, data);
 
-        } 
-        else if (signal.type === "answer") {
+        }
 
-            await peerConnection.setRemoteDescription(signal);
+        // ANSWER
+        else if (data.type === "answer") {
 
-        } 
-        else if (signal.candidate) {
+            await peerConnection.setRemoteDescription(data);
 
-            await peerConnection.addIceCandidate(signal);
+        }
+
+        // ICE CANDIDATE
+        else if (data.candidate) {
+
+            await peerConnection.addIceCandidate(
+                new RTCIceCandidate(data.candidate)
+            );
 
         }
 
     } catch (err) {
-
         console.error("Signal error:", err);
-
     }
 
 });
 
 // ----------------------------
-// WEBRTC CONNECTION
+// WEBRTC CORE
 // ----------------------------
-
 function startConnection(isCaller, offer = null) {
 
     if (!localStream) return;
@@ -110,14 +100,14 @@ function startConnection(isCaller, offer = null) {
         remoteVideo.srcObject = event.streams[0];
     };
 
-    // ICE candidates
+    // ICE candidates (CORREGIDO)
     peerConnection.onicecandidate = (event) => {
 
         if (event.candidate) {
 
             socket.emit("signal", {
                 room,
-                signal: event.candidate
+                candidate: event.candidate
             });
 
         }
@@ -125,18 +115,18 @@ function startConnection(isCaller, offer = null) {
     };
 
     // ----------------------------
-    // CALLER (quien inicia)
+    // CALLER
     // ----------------------------
-
     if (isCaller) {
 
         peerConnection.createOffer()
-        .then(offer => peerConnection.setLocalDescription(offer))
+        .then(o => peerConnection.setLocalDescription(o))
         .then(() => {
 
             socket.emit("signal", {
                 room,
-                signal: peerConnection.localDescription
+                type: "offer",
+                sdp: peerConnection.localDescription
             });
 
         });
@@ -144,23 +134,22 @@ function startConnection(isCaller, offer = null) {
     }
 
     // ----------------------------
-    // RECEIVER (quien recibe)
+    // RECEIVER
     // ----------------------------
-
     else {
 
         peerConnection.setRemoteDescription(offer)
         .then(() => peerConnection.createAnswer())
-        .then(answer => peerConnection.setLocalDescription(answer))
+        .then(a => peerConnection.setLocalDescription(a))
         .then(() => {
 
             socket.emit("signal", {
                 room,
-                signal: peerConnection.localDescription
+                type: "answer",
+                sdp: peerConnection.localDescription
             });
 
         });
 
     }
-
 }
