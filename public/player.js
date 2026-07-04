@@ -1,9 +1,10 @@
 const picker = document.getElementById("filePicker");
 const movie = document.getElementById("movie");
 
-let pendingVideoUrl = null;
+// ----------------------------
+// SUBIR VIDEO
+// ----------------------------
 
-// cuando eliges archivo
 picker.addEventListener("change", async (event) => {
 
     const file = event.target.files[0];
@@ -12,27 +13,37 @@ picker.addEventListener("change", async (event) => {
     const formData = new FormData();
     formData.append("video", file);
 
-    const res = await fetch("/upload", {
-        method: "POST",
-        body: formData
-    });
+    try {
 
-    const data = await res.json();
+        const res = await fetch("/upload", {
+            method: "POST",
+            body: formData
+        });
 
-    if (data.success) {
+        const data = await res.json();
 
-        // solo el host avisa al otro
-        socket.emit("video-selected", {
-            room,
+        if (!data.success) return;
+
+        // cargar en quien lo subió
+        loadVideo(data.url);
+
+        // avisar al otro usuario
+        window.socket.emit("video-selected", {
+            room: window.room,
             url: data.url
         });
 
-        // host también lo carga
-        loadVideo(data.url);
+    } catch (err) {
+
+        console.error("Error subiendo video:", err);
 
     }
 
 });
+
+// ----------------------------
+// CARGAR VIDEO
+// ----------------------------
 
 function loadVideo(url) {
 
@@ -41,11 +52,12 @@ function loadVideo(url) {
 
 }
 
-// cuando el otro recibe video
-socket.on("video-selected", (url) => {
+// ----------------------------
+// RECIBIR VIDEO DEL OTRO
+// ----------------------------
 
-    pendingVideoUrl = url;
+window.socket.on("video-selected", (url) => {
 
-    showAcceptButton(url);
+    loadVideo(url);
 
 });

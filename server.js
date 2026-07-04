@@ -6,85 +6,154 @@ const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+
+const io = new Server(server, {
+    cors: {
+        origin: "*"
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 
 // ----------------------------
-// VIDEO STATE
+// Archivos públicos
 // ----------------------------
-let currentVideo = {};
 
-// ----------------------------
-// MULTER
-// ----------------------------
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, "uploads/"),
-    filename: (req, file, cb) =>
-        cb(null, Date.now() + path.extname(file.originalname))
-});
-
-const upload = multer({ storage });
-
-// ----------------------------
-// STATIC
-// ----------------------------
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
 // ----------------------------
-// UPLOAD VIDEO
+// MULTER
 // ----------------------------
-app.post("/upload", upload.single("video"), (req, res) => {
-    if (!req.file) return res.status(400).json({ success: false });
 
-    res.json({
-        success: true,
-        url: "/uploads/" + req.file.filename
-    });
+const storage = multer.diskStorage({
+
+    destination(req, file, cb) {
+
+        cb(null, "uploads/");
+
+    },
+
+    filename(req, file, cb) {
+
+        cb(null, Date.now() + path.extname(file.originalname));
+
+    }
+
+});
+
+const upload = multer({
+    storage
 });
 
 // ----------------------------
-// SOCKET.IO
+// Estado de cada sala
 // ----------------------------
-io.on("connection", (socket) => {
 
-    console.log("Conectado:", socket.id);
+const rooms = {};
 
-    // JOIN ROOM
-    socket.on("join-room", (room) => {
+// ----------------------------
+// Upload
+// ----------------------------
+
+app.post("/upload", upload.single("video"), (req, res) => {
+
+    if (!req.file) {
+
+        return res.json({
+            success: false
+        });
+
+    }
+
+    res.json({
+
+        success: true,
+
+        url: "/uploads/" + req.file.filename
+
+    });
+
+});
+
+// ----------------------------
+// SOCKET
+// ----------------------------
+
+io.on("connection", socket => {
+
+    console.log("Nuevo usuario:", socket.id);
+
+    socket.on("join-room", room => {
+
         socket.join(room);
 
-        // avisar a TODOS en la sala (más estable)
+        if (!rooms[room]) {
+
+            rooms[room] = {
+                currentVideo: null
+            };
+
+        }
+
         socket.to(room).emit("user-joined");
 
-        // sync video si existe
-        if (currentVideo[room]) {
-            socket.emit("video-selected", currentVideo[room]);
+        if (rooms[room].currentVideo) {
+
+            socket.emit(
+                "video-selected",
+                rooms[room].currentVideo
+            );
+
         }
+
     });
 
-    // ----------------------------
-    // WEBRTC SIGNAL (IMPORTANTE)
-    // ----------------------------
-    socket.on("signal", (data) => {
+    socket.on("signal", data => {
+
         socket.to(data.room).emit("signal", data);
+
     });
 
-    // ----------------------------
-    // VIDEO SYNC
-    // ----------------------------
-    socket.on("video-selected", ({ room, url }) => {
-        currentVideo[room] = url;
-        socket.to(room).emit("video-selected", url);
+    socket.on("video-selected", data => {
+
+        rooms[data.room].currentVideo = data.url;
+
+        socket.to(data.room).emit(
+            "video-selected",
+            data.url
+        );
+
     });
 
-    socket.on("video-event", ({ room, event }) => {
-        socket.to(room).emit("video-event", event);
+    socket.on("video-event", data => {
+
+        socket.to(data.room).emit(
+            "video-event",
+            data.event
+        );
+
+    });
+
+    socket.on("chat-message", data => {
+
+        socket.to(data.room).emit(
+            "chat-message",
+            data.message
+        );
+
+    });
+
+    socket.on("disconnect", () => {
+
+        console.log("Desconectado:", socket.id);
+
     });
 
 });
 
 server.listen(PORT, () => {
-    console.log("Servidor en puerto", PORT);
+
+    console.log("Servidor iniciado en puerto", PORT);
+
 });

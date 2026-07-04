@@ -1,153 +1,279 @@
-const socket = io();
+// ======================================
+// WEBRTC V2
+// PARTE 1
+// ======================================
 
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
-const room = "pareja1";
+let localStream = null;
+let peerConnection = null;
 
-let localStream;
-let peerConnection;
+// --------------------------------------
+// CONFIG ICE
+// --------------------------------------
 
-// ----------------------------
-// CONFIG WEBRTC
-// ----------------------------
-const config = {
+const rtcConfig = {
+
     iceServers: [
-        { urls: "stun:stun.l.google.com:19302" }
+
+        {
+            urls: "stun:stun.l.google.com:19302"
+        },
+
+        {
+            urls: "stun:stun1.l.google.com:19302"
+        }
+
     ]
+
 };
 
-// ----------------------------
-// INICIAR TODO (IMPORTANTE)
-// ----------------------------
-async function start() {
+// --------------------------------------
+// INICIAR CAMARA
+// --------------------------------------
+
+async function initCamera() {
 
     try {
 
-        console.log("Pidiendo cámara...");
-
         localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        });
 
-        console.log("Cámara OK");
+            video: true,
+
+            audio: true
+
+        });
 
         localVideo.srcObject = localStream;
 
-        socket.emit("join-room", room);
+        console.log("✅ Cámara iniciada");
 
-    } catch (err) {
-        console.error("ERROR CAMARA:", err);
+        window.socket.emit(
+
+            "join-room",
+
+            window.room
+
+        );
+
     }
+
+    catch(err){
+
+        console.error(err);
+
+        alert("No fue posible acceder a la cámara o micrófono.");
+
+    }
+
 }
 
-start();
+// --------------------------------------
+// CREAR CONEXION
+// --------------------------------------
 
-// ----------------------------
-// USER JOINED
-// ----------------------------
-socket.on("user-joined", () => {
+function createPeer(){
 
-    console.log("Otro usuario conectado");
+    peerConnection = new RTCPeerConnection(rtcConfig);
 
-    if (!localStream) {
-        setTimeout(() => startConnection(true), 1000);
-        return;
-    }
+    // enviar cámara
 
-    startConnection(true);
-});
+    localStream.getTracks().forEach(track=>{
 
-// ----------------------------
-// SIGNAL
-// ----------------------------
-socket.on("signal", async (data) => {
+        peerConnection.addTrack(
 
-    if (!peerConnection) return;
+            track,
+
+            localStream
+
+        );
+
+    });
+
+    // recibir cámara
+
+    peerConnection.ontrack=(event)=>{
+
+        console.log("📹 Video remoto recibido");
+
+        remoteVideo.srcObject=event.streams[0];
+
+    };
+
+    // candidatos ICE
+
+    peerConnection.onicecandidate=(event)=>{
+
+        if(!event.candidate) return;
+
+        window.socket.emit("signal",{
+
+            room:window.room,
+
+            candidate:event.candidate
+
+        });
+
+    };
+
+}
+// ======================================
+// WEBRTC V2
+// PARTE 2
+// ======================================
+
+// --------------------------------------
+// INICIAR LLAMADA (CALLER)
+// --------------------------------------
+
+async function startCall(){
+
+    createPeer();
+
+    const offer = await peerConnection.createOffer();
+
+    await peerConnection.setLocalDescription(offer);
+
+    window.socket.emit("signal", {
+
+        room: window.room,
+
+        type: "offer",
+
+        sdp: offer
+
+    });
+
+}
+
+// --------------------------------------
+// RECIBIR OFERTA
+// --------------------------------------
+
+async function handleOffer(offer){
+
+    createPeer();
+
+    await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(offer)
+    );
+
+    const answer = await peerConnection.createAnswer();
+
+    await peerConnection.setLocalDescription(answer);
+
+    window.socket.emit("signal", {
+
+        room: window.room,
+
+        type: "answer",
+
+        sdp: answer
+
+    });
+
+}
+
+// --------------------------------------
+// RECIBIR RESPUESTA
+// --------------------------------------
+
+async function handleAnswer(answer){
+
+    if(!peerConnection) return;
+
+    await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(answer)
+    );
+
+}
+// ======================================
+// WEBRTC V2
+// PARTE 3
+// ======================================
+
+// --------------------------------------
+// ESCUCHAR SOCKET SIGNALS
+// --------------------------------------
+
+window.socket.on("signal", async (data) => {
 
     try {
 
+        // --------------------------
+        // OFFER
+        // --------------------------
+
         if (data.type === "offer") {
-            await startConnection(false, data.sdp);
+
+            console.log("📩 Offer recibida");
+
+            await handleOffer(data.sdp);
+
+            return;
         }
 
-        else if (data.type === "answer") {
-            await peerConnection.setRemoteDescription(data.sdp);
+        // --------------------------
+        // ANSWER
+        // --------------------------
+
+        if (data.type === "answer") {
+
+            console.log("📩 Answer recibida");
+
+            await handleAnswer(data.sdp);
+
+            return;
         }
 
-        else if (data.candidate) {
+        // --------------------------
+        // ICE CANDIDATE
+        // --------------------------
+
+        if (data.candidate) {
+
+            if (!peerConnection) return;
+
             await peerConnection.addIceCandidate(
                 new RTCIceCandidate(data.candidate)
             );
+
         }
 
-    } catch (err) {
-        console.error("Signal error:", err);
     }
+
+    catch(err){
+
+        console.error("Signal error:", err);
+
+    }
+
 });
 
-// ----------------------------
-// WEBRTC CORE
-// ----------------------------
-function startConnection(isCaller, offer = null) {
+// --------------------------------------
+// CUANDO ENTRA OTRO USUARIO
+// --------------------------------------
 
-    if (!localStream) return;
+window.socket.on("user-joined", () => {
 
-    peerConnection = new RTCPeerConnection(config);
+    console.log("👤 Usuario conectado -> iniciando llamada");
 
-    // enviar stream
-    localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-    });
+    // IMPORTANTE: solo uno inicia la llamada
+    setTimeout(() => {
 
-    // recibir stream
-    peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-    };
+        startCall();
 
-    // ICE
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit("signal", {
-                room,
-                candidate: event.candidate
-            });
-        }
-    };
+    }, 1000);
 
-    // CALLER
-    if (isCaller) {
+});
 
-        peerConnection.createOffer()
-        .then(o => peerConnection.setLocalDescription(o))
-        .then(() => {
+// --------------------------------------
+// INICIAR TODO
+// --------------------------------------
 
-            socket.emit("signal", {
-                room,
-                type: "offer",
-                sdp: peerConnection.localDescription
-            });
+window.addEventListener("load", () => {
 
-        });
+    initCamera();
 
-    }
-
-    // RECEIVER
-    else {
-
-        peerConnection.setRemoteDescription(offer)
-        .then(() => peerConnection.createAnswer())
-        .then(a => peerConnection.setLocalDescription(a))
-        .then(() => {
-
-            socket.emit("signal", {
-                room,
-                type: "answer",
-                sdp: peerConnection.localDescription
-            });
-
-        });
-
-    }
-}
+});
